@@ -200,7 +200,7 @@ class Orm
 
         $clauses = implode(" AND ", array_map(fn($key) => "`$key` = ?", array_keys($conditions)));
         if ($clauses !== "")
-            $stmt .= "WHERE $clauses";
+            $stmt .= " WHERE $clauses";
 
         if (!empty($orderBy)) {
             // Validate keys and order direction
@@ -216,7 +216,13 @@ class Orm
             }
             $stmt .= " ORDER BY " . implode(", ", array_map(fn($key, $value) => "$key $value", array_keys($orderBy), $orderBy));
         }
-        $results = $this->query($stmt, array_values($conditions))->fetchAll(\PDO::FETCH_ASSOC);
+
+        try {
+
+            $results = $this->query($stmt, array_values($conditions))->fetchAll(\PDO::FETCH_ASSOC);
+        } catch (\PDOException $e) {
+            throw $e;
+        }
         return array_map(fn($result) => $this->arrayToObject($className, $result), $results);
     }
 
