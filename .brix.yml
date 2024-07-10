@@ -1,0 +1,11 @@
+version: '1.0'
+
+
+
+coder:
+    include:
+        - ./src/
+        - /.brix-job/
+    exclude:
+        - ./node_modules/*
+        - /app.fe/.webpack

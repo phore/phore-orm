@@ -1,0 +1,32 @@
+{
+  "name": "phore/orm",
+  "description": "Object Relational Mapper",
+  "license": "MIT",
+  "authors": [
+    { "name": "Matthias Leuffen", "email": "m@tth.es" }
+  ],
+  "require": {
+    "php": ">=8.1"
+
+  },
+
+  "suggest": {
+  },
+  "autoload": {
+    "psr-4": {
+        "Phore\\MiniSql\\": "src/",
+        "Phore\\MiniSql\\Test\\": "test/"
+    }
+  },
+  "minimum-stability": "dev",
+  "require-dev": {
+    "phore/tester": "*",
+      "brixlab/coder": "dev-main"
+  },
+  "config": {
+    "preferred-install": "source",
+    "allow-plugins": {
+      "php-http/discovery": false
+    }
+  }
+}
