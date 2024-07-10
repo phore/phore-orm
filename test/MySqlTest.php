@@ -27,7 +27,7 @@ class MySqlTest extends \PHPUnit\Framework\TestCase
     public function testCreate() : void
     {
         $m = $this->getMSql();
-        $m->create(new DemoEntity(null,"John Doe2", "wurst@test23"));
+        $m->create(new DemoEntity(44,"John Doe2", "wurst@test23"));
 
         $e = $m->withClass(DemoEntity::class)->select([]);
 

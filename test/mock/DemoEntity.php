@@ -9,7 +9,7 @@ class DemoEntity {
     public static function __schema() {
         return new OrmClassSchema(
             tableName: "demo_entity",
-            primaryKey: "id",
+            primaryKey: ["id", "name"],
             autoincrement: false,
             columns: [
                 "id" => "int",

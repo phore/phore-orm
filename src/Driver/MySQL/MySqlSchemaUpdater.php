@@ -217,6 +217,9 @@ class MySqlSchemaUpdater implements OrmSchemaUpdater
             $actions[] = "ADD INDEX `{$index->indexName}` ($columnsSql)";
         }
         foreach ($indexDiff['drop'] as $indexName) {
+            if ($indexName === "PRIMARY") {
+                continue;
+            }
             $actions[] = "DROP INDEX `$indexName`";
         }
         foreach ($foreignKeyDiff['add'] as $foreignKey) {
@@ -253,7 +256,7 @@ class MySqlSchemaUpdater implements OrmSchemaUpdater
             $primaryKey = implode(", ", $primaryKey);
         }
 
-        return "PRIMARY KEY (`$primaryKey`)";
+        return "PRIMARY KEY ($primaryKey)";
     }
 
     /**

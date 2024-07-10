@@ -196,9 +196,11 @@ class Orm
             $className = $this->withClass ?? throw new \InvalidArgumentException("No class specified for select operation");
         }
         $schema = $this->schema->getSchema($className);
+        $stmt = "SELECT * FROM {$schema->tableName}";
 
         $clauses = implode(" AND ", array_map(fn($key) => "`$key` = ?", array_keys($conditions)));
-        $stmt = "SELECT * FROM {$schema->tableName} WHERE $clauses";
+        if ($clauses !== "")
+            $stmt .= "WHERE $clauses";
 
         if (!empty($orderBy)) {
             // Validate keys and order direction
