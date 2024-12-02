@@ -19,6 +19,9 @@ class Orm
     public OrmSchema $schema;
 
 
+    private static \WeakMap $origData;
+
+
     private ?string $withClass = null;
 
     /**
@@ -30,6 +33,9 @@ class Orm
                 $driver = OrmDriverFactory::GetDriver($driver);
             }
             $this->driver = $driver;
+        }
+        if (! isset(self::$origData)) {
+            self::$origData = new \WeakMap();
         }
 
     }
@@ -228,7 +234,9 @@ class Orm
 
     private function arrayToObject(string $className, array $data): object {
         $obj = $this->schema->getSchema($className)->createInstanceWithoutConstructor();
-        $obj->____orm_orig_data = $data;
+
+        self::$origData[$obj] = $data;
+
         foreach ($data as $key => $value) {
             $obj->$key = $value;
         }
@@ -238,9 +246,11 @@ class Orm
 
     private function resetOrigData(object $obj) {
         $schema = $this->schema->getClassSchemaByObject($obj);
-        $obj->____orm_orig_data = [];
+
+        self::$origData[$obj] = [];
+
         foreach ($schema->getColumnNames() as $key) {
-            $obj->____orm_orig_data[$key] = $obj->$key;
+            self::$origData[$obj][$key] = $obj->$key;
         }
     }
 
@@ -248,7 +258,7 @@ class Orm
         $schema = $this->schema->getClassSchemaByObject($oldObj);
         $changed = [];
         foreach ($schema->getColumnNames() as $key) {
-            if ($oldObj->$key !== $oldObj->____orm_orig_data[$key]) {
+            if ($oldObj->$key !== self::$origData[$oldObj][$key]) {
                 $changed[$key] = $oldObj->$key;
             }
         }
@@ -256,6 +266,6 @@ class Orm
     }
 
     public function getOriginalColumnValue(object $obj, string $column) {
-        return $obj->____orm_orig_data[$column];
+        return self::$origData[$obj][$column];
     }
 }
