@@ -5,6 +5,7 @@ namespace Phore\MiniSql;
 use Phore\MiniSql\Driver\MySQL\MySqlSchemaUpdater;
 use Phore\MiniSql\Driver\OrmDriver;
 use Phore\MiniSql\Driver\OrmDriverFactory;
+use Phore\MiniSql\Exception\SqlSyntaxException;
 use Phore\MiniSql\Schema\OrmClassSchema;
 use Phore\MiniSql\Schema\OrmSchema;
 
@@ -63,6 +64,11 @@ class Orm
         $this->schema = new OrmSchema($this->classNames);
     }
 
+    
+    public function getPdo() : \PDO {
+        return $this->pdo;
+    }
+    
 
     public function updateSchema(): array {
         return $this->driver->getSchemaUpdater()->updateSchema($this->schema);
@@ -70,7 +76,11 @@ class Orm
 
     public function query(string $stmt, array $params = []): \PDOStatement {
         $query = $this->pdo->prepare($stmt);
-        $query->execute($params);
+        try {
+            $query->execute($params);
+        } catch (\Exception $e) {
+            throw new SqlSyntaxException($e->getMessage(), $stmt, $e->getCode(), $e);
+        } 
         return $query;
     }
 
@@ -204,7 +214,19 @@ class Orm
         $schema = $this->schema->getSchema($className);
         $stmt = "SELECT * FROM {$schema->tableName}";
 
-        $clauses = implode(" AND ", array_map(fn($key) => "`$key` = ?", array_keys($conditions)));
+        $clauses = [];
+        foreach ($conditions as $key => $value) {
+            if (is_numeric($key) && $value instanceof Sql) {
+                $clauses[] = "(" . $value->__getSelect($this) . ")";
+                continue;
+            }
+            if (! in_array($key, $schema->getColumnNames())) {
+                throw new \InvalidArgumentException("Invalid column name in conditions: $key");
+            }
+            $clauses[] = "`$key` = " . $this->pdo->quote($value);            
+        }
+        
+        $clauses = implode(" AND ", $clauses);
         if ($clauses !== "")
             $stmt .= " WHERE $clauses";
 
@@ -225,7 +247,7 @@ class Orm
 
         try {
 
-            $results = $this->query($stmt, array_values($conditions))->fetchAll(\PDO::FETCH_ASSOC);
+            $results = $this->query($stmt, [])->fetchAll(\PDO::FETCH_ASSOC);
         } catch (\PDOException $e) {
             throw $e;
         }
