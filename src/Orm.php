@@ -254,6 +254,20 @@ class Orm
         return array_map(fn($result) => $this->arrayToObject($className, $result), $results);
     }
 
+    /**
+     * @param array $conditions
+     * @param array $orderBy
+     * @param class-string<T> $className
+     * @return T|null
+     */
+    public function selectOne(array $conditions, array $orderBy = [], string $className = null): ?object {
+        $results = $this->select($conditions, $orderBy, $className);
+        if (count($results) > 1) {
+            throw new \InvalidArgumentException("selectOne returned more than one result");
+        }
+        return $results[0] ?? null;
+    }
+
     private function arrayToObject(string $className, array $data): object {
         $obj = $this->schema->getSchema($className)->createInstanceWithoutConstructor();
 
