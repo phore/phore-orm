@@ -11,4 +11,4 @@ command:
     - "composer update"
 
   test:
-    - "vendor/bin/pest"
+    - "vendor/bin/phpspec run"
