@@ -64,27 +64,36 @@ class Orm
         $this->schema = new OrmSchema($this->classNames);
     }
 
-    
+    private function throwExceptionIfNotConnected() {
+        if (! isset($this->pdo)) {
+            throw new \RuntimeException("Not connected to database. Call connect() first.");
+        }
+    }
+
+
     public function getPdo() : \PDO {
         return $this->pdo;
     }
-    
+
 
     public function updateSchema(): array {
         return $this->driver->getSchemaUpdater()->updateSchema($this->schema);
     }
 
     public function query(string $stmt, array $params = []): \PDOStatement {
+        $this->throwExceptionIfNotConnected();
+
         $query = $this->pdo->prepare($stmt);
         try {
             $query->execute($params);
         } catch (\Exception $e) {
             throw new SqlSyntaxException($e->getMessage(), $stmt, $e->getCode(), $e);
-        } 
+        }
         return $query;
     }
 
     public function create(object $obj): bool {
+        $this->throwExceptionIfNotConnected();
         $schema = $this->schema->getClassSchemaByObject($obj);
 
 
@@ -111,6 +120,8 @@ class Orm
      * @return null|T
      */
     public function read(int $id, string $className = null): ?object {
+        $this->throwExceptionIfNotConnected();
+
         if ($className === null) {
             $className = $this->withClass ?? throw new \InvalidArgumentException("No class specified for read operation");
         }
@@ -127,6 +138,7 @@ class Orm
     }
 
     public function update(object $obj): bool {
+        $this->throwExceptionIfNotConnected();
 
         $changedColumnValues = $this->changedColumns($obj);
         if (empty($changedColumnValues))
@@ -162,6 +174,8 @@ class Orm
     }
 
     public function delete(object $obj): bool {
+        $this->throwExceptionIfNotConnected();
+
         $schema = $this->schema->getClassSchemaByObject($obj);
         $properties = [];
         $stmt = "DELETE FROM `{$schema->tableName}` ";
@@ -190,6 +204,8 @@ class Orm
      * @return array<T>
      */
     public function listAll(string $className = null): array {
+        $this->throwExceptionIfNotConnected();
+
         if ($className === null) {
             $className = $this->withClass ?? throw new \InvalidArgumentException("No class specified for listAll operation");
         }
@@ -208,6 +224,8 @@ class Orm
      * @return array<T>
      */
     public function select(array $conditions, array $orderBy = [], string $className = null): array {
+        $this->throwExceptionIfNotConnected();
+
         if ($className === null) {
             $className = $this->withClass ?? throw new \InvalidArgumentException("No class specified for select operation");
         }
@@ -223,9 +241,9 @@ class Orm
             if (! in_array($key, $schema->getColumnNames())) {
                 throw new \InvalidArgumentException("Invalid column name in conditions: $key");
             }
-            $clauses[] = "`$key` = " . $this->pdo->quote($value);            
+            $clauses[] = "`$key` = " . $this->pdo->quote($value);
         }
-        
+
         $clauses = implode(" AND ", $clauses);
         if ($clauses !== "")
             $stmt .= " WHERE $clauses";
@@ -269,6 +287,8 @@ class Orm
     }
 
     private function arrayToObject(string $className, array $data): object {
+        $this->throwExceptionIfNotConnected();
+
         $obj = $this->schema->getSchema($className)->createInstanceWithoutConstructor();
 
         self::$origData[$obj] = $data;
@@ -281,6 +301,8 @@ class Orm
 
 
     private function resetOrigData(object $obj) {
+        $this->throwExceptionIfNotConnected();
+
         $schema = $this->schema->getClassSchemaByObject($obj);
 
         self::$origData[$obj] = [];
@@ -291,6 +313,8 @@ class Orm
     }
 
     public function changedColumns(object $oldObj): array {
+        $this->throwExceptionIfNotConnected();
+
         $schema = $this->schema->getClassSchemaByObject($oldObj);
         $changed = [];
         foreach ($schema->getColumnNames() as $key) {

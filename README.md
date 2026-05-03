@@ -114,8 +114,18 @@ public static function __schema(): OrmClassSchema
             'email' => 'varchar(255)'
         ],
         indexes: [
-            'idx_name' => ['name'],
-            'idx_email' => ['email']
+            new OrmIndex(
+                columns: ['email'],
+                type: 'UNIQUE'
+            ),
+            new OrmIndex(
+                columns: ['hit_id', "tag"],
+                indexName: 'idx_hit_id_tag',
+                type: 'INDEX'
+            )
+        ],
+        foreignKeys: [
+            new OrmForeignKey("hit_id", Hit::class, "id", onDelete: "cascade")
         ]
     );
 }
