@@ -1,7 +1,7 @@
 version: 1
 from: "ghcr.io/nfra-project/kickstart-flavor-php:unstable"
 ports: "80:80;2222:22"
-
+secrets: "open_ai"
 packages: ["php8.3-sqlite3"]
 config_file:
   template: "config.php.dist"

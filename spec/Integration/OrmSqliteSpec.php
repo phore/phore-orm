@@ -2,9 +2,10 @@
 
 namespace spec\Phore\MiniSql\Integration;
 
+
 use Phore\MiniSql\Orm;
-use Phore\MiniSql\Test\mock\DemoEntity;
 use PhpSpec\ObjectBehavior;
+use spec\Phore\MiniSql\Integration\mock\DemoEntity;
 
 class OrmSqliteSpec extends ObjectBehavior
 {

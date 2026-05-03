@@ -3,7 +3,6 @@
 namespace spec\Phore\MiniSql\Integration;
 
 use Phore\MiniSql\Orm;
-use Phore\MiniSql\Test\mock\DemoEntity;
 use PhpSpec\ObjectBehavior;
 use spec\Phore\MiniSql\Integration\mock\Hit;
 use spec\Phore\MiniSql\Integration\mock\HitTag;
@@ -24,11 +23,12 @@ class OrmDemoForeignKeySpec extends ObjectBehavior
         $hit = new Hit("abcd", "2024-01-01 12:00:00", "", "", "");
         $orm->create($hit);
 
-        $data = $orm->read("abcd", Hit::class);
+
 
 
         $hitTag = new HitTag("abcd", 1000, "tag1", "value1");
         $orm->create($hitTag);
+        $data = $orm->read("abcd", Hit::class);
     }
 
 }

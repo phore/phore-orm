@@ -42,7 +42,7 @@ class HitTag
                 )
             ],
             foreignKeys: [
-                new OrmForeignKey("hit_id", Hit::class, "id", onDelete: "cascade")
+                new OrmForeignKey("hit_id", "hit", "id", onDelete: "cascade")
             ]
         );
     }

@@ -1,6 +1,6 @@
 <?php
 
-namespace Phore\MiniSql\Test\mock;
+namespace spec\Phore\MiniSql\Integration\mock;
 
 use Phore\MiniSql\Schema\OrmClassSchema;
 use Phore\MiniSql\Schema\OrmIndex;
