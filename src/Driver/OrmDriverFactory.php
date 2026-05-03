@@ -3,6 +3,7 @@
 namespace Phore\MiniSql\Driver;
 
 use Phore\MiniSql\Driver\MySQL\MySqlDriver;
+use Phore\MiniSql\Driver\SQLite\SqliteDriver;
 
 class OrmDriverFactory
 {
@@ -11,9 +12,11 @@ class OrmDriverFactory
     {
         if (str_starts_with($dsn, "mysql:"))
             return new MySqlDriver($dsn);
+        if (str_starts_with($dsn, "sqlite:"))
+            return new SqliteDriver($dsn);
 
         $dsn = explode(":", $dsn, 2)[0];
-        throw new \InvalidArgumentException("Unknown DSN-scheme: '" . $dsn . "'. Supported: mysql");
+        throw new \InvalidArgumentException("Unknown DSN-scheme: '" . $dsn . "'. Supported: mysql, sqlite");
     }
 
 }
