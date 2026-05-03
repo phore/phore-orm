@@ -29,7 +29,8 @@
   "config": {
     "preferred-install": "source",
     "allow-plugins": {
-      "php-http/discovery": false
+      "php-http/discovery": false,
+      "pestphp/pest-plugin": true
     }
   }
 }
