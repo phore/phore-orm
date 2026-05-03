@@ -31,7 +31,19 @@ class OrmSqliteSpec extends ObjectBehavior
         }
     }
 
-    function it_selects_updates_and_deletes_entities(): void
+    function it_selects_entities_by_criteria(): void
+    {
+        $orm = $this->createOrm();
+        $entity = new DemoEntity(2, "Jane Doe", "jane@example.com");
+        $orm->create($entity);
+
+        $selected = $orm->withClass(DemoEntity::class)->select(["id" => 2, "name" => "Jane Doe"]);
+        if (count($selected) !== 1) {
+            throw new \RuntimeException("Expected to select exactly one row.");
+        }
+    }
+
+    function it_updates_entity_fields(): void
     {
         $orm = $this->createOrm();
         $entity = new DemoEntity(2, "Jane Doe", "jane@example.com");
@@ -52,7 +64,20 @@ class OrmSqliteSpec extends ObjectBehavior
         if ($updated === null || $updated->email !== "jane@new.example") {
             throw new \RuntimeException("Expected updated row to be returned.");
         }
+    }
 
+    function it_deletes_entities(): void
+    {
+        $orm = $this->createOrm();
+        $entity = new DemoEntity(2, "Jane Doe", "jane@example.com");
+        $orm->create($entity);
+
+        $selected = $orm->withClass(DemoEntity::class)->select(["id" => 2, "name" => "Jane Doe"]);
+        if (count($selected) !== 1) {
+            throw new \RuntimeException("Expected to select exactly one row.");
+        }
+
+        $selectedEntity = $selected[0];
         if ($orm->delete($selectedEntity) !== true) {
             throw new \RuntimeException("Expected delete() to return true.");
         }
