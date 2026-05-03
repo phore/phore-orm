@@ -104,7 +104,7 @@ class Orm
         $result = $this->query($stmt, array_values($schema->getColumnValuesFromObject($obj)));
 
         $lastInsertId = $this->pdo->lastInsertId();
-        if ($lastInsertId) {
+        if ($schema->autoincrement && $lastInsertId) {
             if (! is_string($schema->primaryKey))
                 throw new \InvalidArgumentException("Primary key definition must be a single column for autoincrement in class: {$schema->className}");
             $obj->{$schema->primaryKey} = $lastInsertId;
