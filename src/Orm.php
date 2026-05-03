@@ -83,11 +83,13 @@ class Orm
     public function query(string $stmt, array $params = []): \PDOStatement {
         $this->throwExceptionIfNotConnected();
 
-        $query = $this->pdo->prepare($stmt);
+
+
         try {
+            $query = $this->pdo->prepare($stmt);
             $query->execute($params);
         } catch (\Exception $e) {
-            throw new SqlSyntaxException($e->getMessage(), $stmt, $e->getCode(), $e);
+            throw new SqlSyntaxException($e->getMessage() . " on stmt '$stmt'", $stmt, 1, $e);
         }
         return $query;
     }
@@ -126,7 +128,6 @@ class Orm
             $className = $this->withClass ?? throw new \InvalidArgumentException("No class specified for read operation");
         }
         $schema = $this->schema->getSchema($className);
-
         if ($schema->primaryKey === null) {
             throw new \InvalidArgumentException("Primary key is not defined for class: {$schema->className}");
         }
@@ -145,8 +146,6 @@ class Orm
             $stmt = "SELECT * FROM {$schema->tableName} WHERE `{$schema->primaryKey}` = ?";
             $data = $this->query($stmt, [$id])->fetch(\PDO::FETCH_ASSOC);
         }
-
-
         if ($data) {
             return $this->arrayToObject($className, $data);
         }
