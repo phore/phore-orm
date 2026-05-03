@@ -20,4 +20,4 @@ services:
 
 networks:
   phore-orm:
-    external: true
+

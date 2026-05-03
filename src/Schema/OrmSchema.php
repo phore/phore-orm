@@ -13,9 +13,11 @@ class OrmSchema
         public array $classes = []
     ){
         foreach ($this->classes as $class) {
+            if ( ! class_exists($class)) {
+                throw new \InvalidArgumentException("Class '$class' not found.");
+            }
             if ( ! method_exists($class, "__schema")) {
-
-                throw new \InvalidArgumentException("Class '$class' has no `public static function __schema() : OrmClassSchema` method: ");
+                throw new \InvalidArgumentException("Class '$class' has no `public static function __schema() : OrmClassSchema` method.");
             }
             $schema = $class::__schema();
             if ( ! $schema instanceof OrmClassSchema) {
