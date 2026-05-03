@@ -50,6 +50,7 @@ use App\Entity\User;
 
 $orm = new Orm([User::class], 'mysql:host=localhost;dbname=testdb;user=root;password=root');
 $orm->connect();
+$orm->updateSchema();
 ```
 
 ### Creating Records
