@@ -32,7 +32,8 @@ class SqliteSchemaUpdater implements OrmSchemaUpdater
         $stmt = $this->pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
         $tables = $stmt->fetchAll(\PDO::FETCH_COLUMN);
         foreach ($tables as $table) {
-            $sql = "DROP TABLE `$table`";
+            $quotedTable = $this->quoteIdentifier($table);
+            $sql = "DROP TABLE $quotedTable";
             $this->log[] = "Dropping table $table";
             $this->lastSql = $sql;
             $this->pdo->exec($sql);
@@ -62,13 +63,14 @@ class SqliteSchemaUpdater implements OrmSchemaUpdater
 
     private function createTable(OrmClassSchema $schema): void
     {
+        $tableName = $this->quoteIdentifier($schema->tableName);
         $parts = [];
         $parts[] = $this->generateColumnsSql($schema->columns, $schema->primaryKey, (bool)$schema->autoincrement);
         $parts[] = $this->generatePrimaryKeySql($schema->primaryKey, (bool)$schema->autoincrement);
         $parts[] = $this->generateForeignKeysSql($schema->foreignKeys);
         $parts = array_values(array_filter($parts, fn($v) => !empty($v)));
 
-        $sql = "CREATE TABLE `{$schema->tableName}` (" . implode(", ", $parts) . "\n);";
+        $sql = "CREATE TABLE $tableName (" . implode(", ", $parts) . "\n);";
         $this->log[] = "Creating table with SQL: $sql";
         $this->lastSql = $sql;
         $this->pdo->exec($sql);
@@ -82,10 +84,12 @@ class SqliteSchemaUpdater implements OrmSchemaUpdater
 
     private function alterTable(OrmClassSchema $schema): void
     {
+        $tableName = $this->quoteIdentifier($schema->tableName);
         $existingColumns = $this->getExistingColumns($schema->tableName);
         foreach ($schema->columns as $colName => $colType) {
             if ( ! isset($existingColumns[$colName])) {
-                $sql = "ALTER TABLE `{$schema->tableName}` ADD COLUMN `$colName` $colType";
+                $quotedCol = $this->quoteIdentifier($colName);
+                $sql = "ALTER TABLE $tableName ADD COLUMN $quotedCol $colType";
                 $this->log[] = "Adding column with SQL: $sql";
                 $this->lastSql .= "\n" . $sql;
                 $this->pdo->exec($sql);
@@ -103,9 +107,10 @@ class SqliteSchemaUpdater implements OrmSchemaUpdater
             if (isset($existingIndexes[$index->indexName])) {
                 continue;
             }
-            $columnsSql = implode(", ", array_map(fn(string $column) => "`$column`", $index->columns));
+            $columnsSql = implode(", ", array_map(fn(string $column) => $this->quoteIdentifier($column), $index->columns));
             $typeSql = strtoupper($index->type) === "UNIQUE" ? "UNIQUE " : "";
-            $sql = "CREATE {$typeSql}INDEX `{$index->indexName}` ON `{$schema->tableName}` ($columnsSql)";
+            $indexName = $this->quoteIdentifier($index->indexName);
+            $sql = "CREATE {$typeSql}INDEX $indexName ON $tableName ($columnsSql)";
             $this->log[] = "Creating missing index with SQL: $sql";
             $this->lastSql .= "\n" . $sql;
             $this->pdo->exec($sql);
@@ -114,7 +119,7 @@ class SqliteSchemaUpdater implements OrmSchemaUpdater
 
     private function getExistingColumns(string $tableName): array
     {
-        $stmt = $this->pdo->query("PRAGMA table_info(`$tableName`)");
+        $stmt = $this->pdo->query("PRAGMA table_info(" . $this->quoteIdentifier($tableName) . ")");
         $columns = $stmt->fetchAll(\PDO::FETCH_ASSOC);
         $ret = [];
         foreach ($columns as $column) {
@@ -125,7 +130,7 @@ class SqliteSchemaUpdater implements OrmSchemaUpdater
 
     private function getExistingIndexes(string $tableName): array
     {
-        $stmt = $this->pdo->query("PRAGMA index_list(`$tableName`)");
+        $stmt = $this->pdo->query("PRAGMA index_list(" . $this->quoteIdentifier($tableName) . ")");
         $indexes = $stmt->fetchAll(\PDO::FETCH_ASSOC);
         $ret = [];
         foreach ($indexes as $index) {
@@ -138,11 +143,12 @@ class SqliteSchemaUpdater implements OrmSchemaUpdater
     {
         $columnsSql = [];
         foreach ($columns as $name => $type) {
+            $quotedName = $this->quoteIdentifier($name);
             if ($autoIncrement && is_string($primaryKey) && $name === $primaryKey) {
-                $columnsSql[] = "`$name` INTEGER PRIMARY KEY AUTOINCREMENT";
+                $columnsSql[] = "$quotedName INTEGER PRIMARY KEY AUTOINCREMENT";
                 continue;
             }
-            $columnsSql[] = "`$name` $type";
+            $columnsSql[] = "$quotedName $type";
         }
         return implode(", ", $columnsSql);
     }
@@ -158,7 +164,7 @@ class SqliteSchemaUpdater implements OrmSchemaUpdater
         if (is_string($primaryKey)) {
             $primaryKey = [$primaryKey];
         }
-        $keysSql = implode(", ", array_map(fn(string $key) => "`$key`", $primaryKey));
+        $keysSql = implode(", ", array_map(fn(string $key) => $this->quoteIdentifier($key), $primaryKey));
         return "PRIMARY KEY ($keysSql)";
     }
 
@@ -175,9 +181,9 @@ class SqliteSchemaUpdater implements OrmSchemaUpdater
         $sql = [];
         foreach ($indexes as $index) {
             assert($index instanceof OrmIndex);
-            $columnsSql = implode(", ", array_map(fn(string $column) => "`$column`", $index->columns));
+            $columnsSql = implode(", ", array_map(fn(string $column) => $this->quoteIdentifier($column), $index->columns));
             $typeSql = strtoupper($index->type) === "UNIQUE" ? "UNIQUE " : "";
-            $sql[] = "CREATE {$typeSql}INDEX `{$index->indexName}` ON `$tableName` ($columnsSql)";
+            $sql[] = "CREATE {$typeSql}INDEX " . $this->quoteIdentifier($index->indexName) . " ON " . $this->quoteIdentifier($tableName) . " ($columnsSql)";
         }
         return $sql;
     }
@@ -192,9 +198,15 @@ class SqliteSchemaUpdater implements OrmSchemaUpdater
         }
         $fks = [];
         foreach ($foreignKeys as $foreignKey) {
-            $fks[] = "FOREIGN KEY (`{$foreignKey->localColumn}`) REFERENCES `{$foreignKey->foreignTable}`(`{$foreignKey->foreignColumn}`) ON DELETE {$foreignKey->onDelete} ON UPDATE {$foreignKey->onUpdate}";
+            $fks[] = "FOREIGN KEY (" . $this->quoteIdentifier($foreignKey->localColumn) . ") REFERENCES " . $this->quoteIdentifier($foreignKey->foreignTable) . "(" . $this->quoteIdentifier($foreignKey->foreignColumn) . ") ON DELETE {$foreignKey->onDelete} ON UPDATE {$foreignKey->onUpdate}";
         }
         return implode(", ", $fks);
     }
-}
 
+    private function quoteIdentifier(string $identifier): string
+    {
+        if ( ! preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $identifier))
+            throw new \InvalidArgumentException("Invalid SQL identifier: '$identifier'");
+        return "`$identifier`";
+    }
+}

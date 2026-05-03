@@ -7,7 +7,7 @@ use Phore\MiniSql\Driver\OrmSchemaUpdater;
 
 class SqliteDriver implements OrmDriver
 {
-    public readonly \PDO $pdo;
+    private ?\PDO $pdo = null;
 
     public function __construct(
         \PDO|string $pdo,
@@ -39,4 +39,3 @@ class SqliteDriver implements OrmDriver
         return new SqliteSchemaUpdater($this->connect());
     }
 }
-
