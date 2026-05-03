@@ -1,0 +1,5 @@
+suites:
+  default:
+    namespace: Phore\MiniSql
+    psr4_prefix: Phore\MiniSql
+formatter.name: pretty

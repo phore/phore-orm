@@ -146,11 +146,6 @@ class Orm
             $stmt = "SELECT * FROM {$schema->tableName} WHERE `{$schema->primaryKey}` = ?";
             $data = $this->query($stmt, [$id])->fetch(\PDO::FETCH_ASSOC);
         }
-
-
-
-
-
         if ($data) {
             return $this->arrayToObject($className, $data);
         }

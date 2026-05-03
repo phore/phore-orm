@@ -15,13 +15,18 @@
   "autoload": {
     "psr-4": {
         "Phore\\MiniSql\\": "src/",
-        "Phore\\MiniSql\\Test\\": "test/"
+        "Phore\\MiniSql\\Test\\": "test/",
+        "spec\\Phore\\MiniSql\\": "spec/"
+
     }
   },
   "minimum-stability": "dev",
   "require-dev": {
-    "phore/tester": "*",
-      "brixlab/coder": "dev-main"
+      "brixlab/coder": "dev-main",
+      "phpspec/phpspec": "^7.6.0"
+  },
+  "scripts": {
+    "test": "vendor/bin/phpspec run"
   },
   "config": {
     "preferred-install": "source",
