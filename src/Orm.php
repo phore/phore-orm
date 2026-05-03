@@ -83,11 +83,13 @@ class Orm
     public function query(string $stmt, array $params = []): \PDOStatement {
         $this->throwExceptionIfNotConnected();
 
-        $query = $this->pdo->prepare($stmt);
+
+
         try {
+            $query = $this->pdo->prepare($stmt);
             $query->execute($params);
         } catch (\Exception $e) {
-            throw new SqlSyntaxException($e->getMessage(), $stmt, $e->getCode(), $e);
+            throw new SqlSyntaxException($e->getMessage() . " on stmt '$stmt'", $stmt, 1, $e);
         }
         return $query;
     }
@@ -119,16 +121,34 @@ class Orm
      * @param int $id
      * @return null|T
      */
-    public function read(int $id, string $className = null): ?object {
+    public function read(int | string | array $id, string $className = null): ?object {
         $this->throwExceptionIfNotConnected();
 
         if ($className === null) {
             $className = $this->withClass ?? throw new \InvalidArgumentException("No class specified for read operation");
         }
         $schema = $this->schema->getSchema($className);
+        if ($schema->primaryKey === null) {
+            throw new \InvalidArgumentException("Primary key is not defined for class: {$schema->className}");
+        }
+        if (is_array($id)) {
+            if ( ! is_array($schema->primaryKey)) {
+                throw new \InvalidArgumentException("Primary key is not composite for class: {$schema->className}. Provide a array value.");
+            }
 
-        $stmt = "SELECT * FROM {$schema->className} WHERE `{$schema->primaryKey}` = ?";
-        $data = $this->query($stmt, [$id])->fetch(\PDO::FETCH_ASSOC);
+            $stmt = "SELECT * FROM {$schema->tableName} WHERE " . implode(" AND ", array_map(fn($key) => "`$key` = ?", $schema->primaryKey));
+            $data = $this->query($stmt, $id)->fetch(\PDO::FETCH_ASSOC);
+        } else {
+
+            if (is_array($schema->primaryKey)) {
+                throw new \InvalidArgumentException("Primary key is composite for class: {$schema->className}. Provide a array value.");
+            }
+            $stmt = "SELECT * FROM {$schema->tableName} WHERE `{$schema->primaryKey}` = ?";
+            $data = $this->query($stmt, [$id])->fetch(\PDO::FETCH_ASSOC);
+        }
+
+
+
 
 
         if ($data) {
