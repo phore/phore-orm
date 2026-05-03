@@ -185,7 +185,7 @@ class SqliteSchemaUpdater implements OrmSchemaUpdater
                 throw new \InvalidArgumentException("Expected instance of OrmIndex, got " . get_debug_type($index));
             $columnsSql = implode(", ", array_map(fn(string $column) => $this->quoteIdentifier($column), $index->columns));
             $typeSql = strtoupper($index->type) === "UNIQUE" ? "UNIQUE " : "";
-            $sql[] = "CREATE {$typeSql}INDEX " . $this->quoteIdentifier($index->indexName) . " ON " . $this->quoteIdentifier($tableName) . " ($columnsSql)";
+            $sql[] = "CREATE {$typeSql}INDEX IF NOT EXISTS " . $this->quoteIdentifier($index->indexName) . " ON " . $this->quoteIdentifier($tableName) . " ($columnsSql)";
         }
         return $sql;
     }

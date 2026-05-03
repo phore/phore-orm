@@ -12,6 +12,7 @@ class OrmSchema
     public function __construct(
         public array $classes = []
     ){
+        $tables = [];
         foreach ($this->classes as $class) {
             if ( ! class_exists($class)) {
                 throw new \InvalidArgumentException("Class '$class' not found.");
@@ -24,6 +25,9 @@ class OrmSchema
                 throw new \InvalidArgumentException("Class '$class' returned invalid schema object. Expected 'OrmClassSchema' got '" . get_class($schema) . "'");
             }
 
+            if (in_array($schema->tableName, $tables)) {
+                throw new \InvalidArgumentException("Duplicate table name '{$schema->tableName}' found in class '$class'. Table names must be unique.");
+            }
             $schema->autobuild($class);
             $this->schemas[$class] = $schema;
 

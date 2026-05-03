@@ -306,6 +306,8 @@ class Orm
 
         $obj = $this->schema->getSchema($className)->createInstanceWithoutConstructor();
 
+        phore_file("/tmp/log.txt")->set_contents(print_r($data, true));
+        
         self::$origData[$obj] = $data;
 
         foreach ($data as $key => $value) {
