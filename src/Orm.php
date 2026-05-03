@@ -119,7 +119,7 @@ class Orm
      * @param int $id
      * @return null|T
      */
-    public function read(int $id, string $className = null): ?object {
+    public function read(int | string | array $id, string $className = null): ?object {
         $this->throwExceptionIfNotConnected();
 
         if ($className === null) {
@@ -127,8 +127,24 @@ class Orm
         }
         $schema = $this->schema->getSchema($className);
 
-        $stmt = "SELECT * FROM {$schema->className} WHERE `{$schema->primaryKey}` = ?";
-        $data = $this->query($stmt, [$id])->fetch(\PDO::FETCH_ASSOC);
+        if ($schema->primaryKey === null) {
+            throw new \InvalidArgumentException("Primary key is not defined for class: {$schema->className}");
+        }
+        if (is_array($id)) {
+            if ( ! is_array($schema->primaryKey)) {
+                throw new \InvalidArgumentException("Primary key is not composite for class: {$schema->className}. Provide a array value.");
+            }
+
+            $stmt = "SELECT * FROM {$schema->tableName} WHERE " . implode(" AND ", array_map(fn($key) => "`$key` = ?", $schema->primaryKey));
+            $data = $this->query($stmt, $id)->fetch(\PDO::FETCH_ASSOC);
+        } else {
+
+            if (is_array($schema->primaryKey)) {
+                throw new \InvalidArgumentException("Primary key is composite for class: {$schema->className}. Provide a array value.");
+            }
+            $stmt = "SELECT * FROM {$schema->tableName} WHERE `{$schema->primaryKey}` = ?";
+            $data = $this->query($stmt, [$id])->fetch(\PDO::FETCH_ASSOC);
+        }
 
 
         if ($data) {
