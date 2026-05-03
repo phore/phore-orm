@@ -20,8 +20,11 @@
   },
   "minimum-stability": "dev",
   "require-dev": {
-    "phore/tester": "*",
-      "brixlab/coder": "dev-main"
+      "brixlab/coder": "dev-main",
+      "pestphp/pest": "^3.7"
+  },
+  "scripts": {
+    "test": "vendor/bin/pest"
   },
   "config": {
     "preferred-install": "source",

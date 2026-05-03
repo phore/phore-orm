@@ -1,7 +1,7 @@
 version: 1
 from: "ghcr.io/nfra-project/kickstart-flavor-php:8.1"
 
-packages: ["php8.1-sqlite3", "php8.1-mysql"]
+packages: ["php8.1-sqlite3"]
 config_file:
   template: "config.php.dist"
   target: "config.php"
@@ -11,5 +11,4 @@ command:
     - "composer update"
 
   test:
-    - "ptest"
-
+    - "vendor/bin/pest"

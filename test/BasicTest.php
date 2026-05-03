@@ -1,52 +1,43 @@
 <?php
 
-namespace Phore\MiniSql\Test;
-
 use Phore\MiniSql\Orm;
 use Phore\MiniSql\Test\mock\DemoEntity;
 
-
-class BasicTest extends \PHPUnit\Framework\TestCase
+function sqliteOrm(): Orm
 {
-
-
-
-    public function testCreateSchema()
-    {
-        $m = new Orm("sqlite:/tmp/database.db", DemoEntity::class);
-        $m->updateSchema();
-    }
-
-
-    public function testCreate()
-    {
-
-        $m = new Orm("sqlite:/tmp/database.db", DemoEntity::class);
-
-       // $m->create(new DemoEntity(3, "John Doe2", "wurst@test23"));
-        echo "Created\n";
-
-    }
-
-    public function testList() {
-        $m = new Orm("sqlite:/tmp/database.db", DemoEntity::class);
-
-        print_r($m->listAll());
-    }
-
-    public function testFind()
-    {
-        $m = new Orm("sqlite:/tmp/database.db", DemoEntity::class);
-        $data = $m->select(["id" => "2"]);
-        print_r($data);
-    }
-
-    public function testUpdate() {
-        $m = new Orm("sqlite:/tmp/database.db", DemoEntity::class);
-        $data = $m->select(["id" => "2"]);
-
-        $data->email = "new@email";
-        $m->update($data);
-    }
-
+    $orm = new Orm([DemoEntity::class], "sqlite::memory:");
+    $orm->connect();
+    $orm->updateSchema();
+    return $orm;
 }
+
+it("creates and lists entities", function () {
+    $orm = sqliteOrm();
+    $entity = new DemoEntity(1, "John Doe", "john@example.com");
+
+    $orm->create($entity);
+
+    $all = $orm->withClass(DemoEntity::class)->listAll();
+    expect($all)->toHaveCount(1);
+    expect($all[0]->name)->toBe("John Doe");
+});
+
+it("selects, updates and deletes entities", function () {
+    $orm = sqliteOrm();
+    $entity = new DemoEntity(2, "Jane Doe", "jane@example.com");
+    $orm->create($entity);
+
+    $selected = $orm->withClass(DemoEntity::class)->select(["id" => 2, "name" => "Jane Doe"]);
+    expect($selected)->toHaveCount(1);
+
+    $selectedEntity = $selected[0];
+    $selectedEntity->email = "jane@new.example";
+    expect($orm->update($selectedEntity))->toBeTrue();
+
+    $updated = $orm->withClass(DemoEntity::class)->selectOne(["id" => 2, "name" => "Jane Doe"]);
+    expect($updated)->not->toBeNull();
+    expect($updated->email)->toBe("jane@new.example");
+
+    expect($orm->delete($selectedEntity))->toBeTrue();
+    expect($orm->withClass(DemoEntity::class)->listAll())->toHaveCount(0);
+});
