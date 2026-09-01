@@ -3,7 +3,7 @@
 namespace Phore\MiniSql\Query;
 
 /**
- * Parses and validates the portable, JSON-serializable query representation.
+ * Parses and validates the plain-object query representation.
  *
  * This class deliberately does not compile SQL and does not depend on Orm.
  * Its output is a normalized array AST that can later be consumed by a query
@@ -34,24 +34,6 @@ final class QueryParser
     private const NULL_OPERATORS = ['isNull', 'isNotNull'];
     private const LIST_OPERATORS = ['in', 'notIn'];
     private const RANGE_OPERATORS = ['between', 'notBetween'];
-
-    /**
-     * @return array<string, mixed>
-     */
-    public function parseJson(string $json): array
-    {
-        try {
-            $query = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
-        } catch (\JsonException $e) {
-            throw new \InvalidArgumentException('Invalid query JSON: ' . $e->getMessage(), 0, $e);
-        }
-
-        if (!is_array($query) || array_is_list($query)) {
-            throw new \InvalidArgumentException('Query JSON must contain an object at the root.');
-        }
-
-        return $this->parse($query);
-    }
 
     /**
      * @param array<string, mixed> $query
