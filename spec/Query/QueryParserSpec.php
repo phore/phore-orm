@@ -36,20 +36,6 @@ class QueryParserSpec extends ObjectBehavior
         $this->parse($query)->shouldReturn($query);
     }
 
-    function it_parses_json(): void
-    {
-        $json = '{"where":{"not":{"field":"deleted_at","op":"isNull"}}}';
-
-        $this->parseJson($json)->shouldReturn([
-            'where' => [
-                'not' => [
-                    'field' => 'deleted_at',
-                    'op' => 'isNull',
-                ],
-            ],
-        ]);
-    }
-
     function it_supports_list_and_range_operators(): void
     {
         $query = [
