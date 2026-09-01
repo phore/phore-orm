@@ -18,7 +18,7 @@ class QSpec extends ObjectBehavior
         $this->shouldHaveType(Q::class);
     }
 
-    function it_builds_the_same_plain_data_format_as_json_queries(): void
+    function it_builds_the_same_plain_data_format_accepted_by_the_parser(): void
     {
         $where = Q::and(
             Q::gte('age', 18),
@@ -48,11 +48,10 @@ class QSpec extends ObjectBehavior
             throw new \RuntimeException('Q must produce the portable plain-data AST.');
         }
 
-        $json = json_encode(['where' => $where], JSON_THROW_ON_ERROR);
-        $parsed = (new QueryParser())->parseJson($json);
+        $parsed = (new QueryParser())->parse(['where' => $where]);
 
         if ($parsed !== ['where' => $expected]) {
-            throw new \RuntimeException('A Q-built query must survive JSON serialization and parsing unchanged.');
+            throw new \RuntimeException('A Q-built query must be accepted unchanged by QueryParser.');
         }
     }
 
