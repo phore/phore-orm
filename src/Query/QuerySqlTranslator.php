@@ -58,6 +58,8 @@ final class QuerySqlTranslator
     /** @param list<mixed> $params */
     private function translateComparison(array $expression, array &$params): string
     {
+        // SECURITY: Field names become SQL syntax and cannot be represented by PDO placeholders.
+        // Always pass them through the strict identifier validator before composing the statement.
         $field = $this->quoteIdentifier($expression['field']);
         $operator = $expression['op'];
         $value = $expression['value'] ?? null;
@@ -87,6 +89,8 @@ final class QuerySqlTranslator
     /** @param list<mixed> $params */
     private function bind(string $field, string $operator, mixed $value, array &$params): string
     {
+        // SECURITY: Never interpolate query values into SQL. Values are returned separately and
+        // must be passed to PDO as prepared-statement parameters by the caller.
         $params[] = $value;
         return "$field $operator ?";
     }
@@ -94,6 +98,7 @@ final class QuerySqlTranslator
     /** @param list<mixed> $values @param list<mixed> $params */
     private function bindList(string $field, string $operator, array $values, array &$params): string
     {
+        // SECURITY: Only the number of placeholders is generated; list values never enter SQL text.
         array_push($params, ...$values);
         return "$field $operator (" . implode(', ', array_fill(0, count($values), '?')) . ')';
     }
@@ -101,6 +106,7 @@ final class QuerySqlTranslator
     /** @param array{0: mixed, 1: mixed} $values @param list<mixed> $params */
     private function bindRange(string $field, string $operator, array $values, array &$params): string
     {
+        // SECURITY: Range bounds are data and therefore remain positional bind parameters.
         $params[] = $values[0];
         $params[] = $values[1];
         return "$field $operator ? AND ?";
@@ -108,6 +114,8 @@ final class QuerySqlTranslator
 
     private function quoteIdentifier(string $identifier): string
     {
+        // SECURITY: Identifier injection is the main non-bindable input boundary. Restrict every
+        // dotted identifier segment to a conservative allow-list before adding identifier quotes.
         $parts = explode('.', $identifier);
         foreach ($parts as $part) {
             if ($part === '' || preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $part) !== 1) {
