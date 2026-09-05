@@ -5,6 +5,7 @@
 | 2026-09-05 | dermatthes | §§ 1–12: Proposal angelegt |
 | 2026-09-05 | dermatthes | § 1, § 2.2, § 10, § 12, § 13: Heavy Write Mode mit Zeitfenstern, versiegelten Manifests und asynchroner Synchronisation ergänzt |
 | 2026-09-05 | dermatthes | § 13.2–§ 13.4: Fensteröffnung durch konkurrierende Master und CAS-Konfliktauflösung präzisiert |
+| 2026-09-05 | dermatthes | § 12.3, § 13.7: Heavy-Write-Abgrenzung und Wiederaufnahme nach Fensteröffnung präzisiert |
 
 **Status:** Offen  
 **Zielprojekt:** Phore ORM  
@@ -237,7 +238,7 @@ Der MVP gilt als technisch tragfähig, wenn automatisierte Tests folgende Eigens
 
 Vor Implementierung sind noch der Referenzprovider, das kanonische Serialisierungsformat, die erlaubten Primärschlüsseltypen, die Standard-Stale-Read-Policy, das Trigger-/Cascade-Modell, der Umgang mit Schema-Migrationen und die Retention alter Commits festzulegen. Für den Heavy Write Mode sind zusätzlich Fensterdauer, Grace Period, maximale Upload-Dauer, Batch-Größe, Manifest-Sharding, zulässige Tabellen und Watermark-Semantik zu entscheiden.
 
-Die Empfehlung lautet, das Vorhaben als experimentellen `CloudSqliteDriver` hinter einer expliziten Feature-Grenze zu beginnen. Das Konzept ist für ein enges, read-lastiges Einsatzprofil feasible. Es scheitert oder wird wirtschaftlich unattraktiv, sobald hohe parallele Write-Raten, Offline-Merges, unkontrollierte Direkt-SQL-Schreibzugriffe, inkompatible Schemas oder Schreibverfügbarkeit während einer Object-Store-Partition gefordert werden.
+Die Empfehlung lautet, das Vorhaben als experimentellen `CloudSqliteDriver` hinter einer expliziten Feature-Grenze zu beginnen. Der konsistente Modus ist für ein enges, read-lastiges Einsatzprofil feasible und wird bei hohen parallelen CRUD-Write-Raten wirtschaftlich unattraktiv. Der getrennte Heavy Write Mode skaliert ungeordnete Append-Daten, unterstützt aber weiterhin keine Offline-Merges, unkontrollierten Direkt-SQL-Schreibzugriffe, inkompatiblen Schemas oder garantierte Schreibverfügbarkeit während einer Object-Store-Partition.
 
 
 ## § 13 Heavy Write Mode
@@ -330,7 +331,7 @@ Bei zehn Minuten Fensterdauer liegt die garantierte Sichtbarkeit typischerweise 
 | Derselbe Batch wird wiederholt | Stabiler Schlüssel und Hash beziehungsweise idempotente eventId verhindern doppelte Wirkung. |
 | Writer lädt nach altem Head hoch | Post-Upload-Head-Prüfung kopiert den Batch in das neue Fenster; spätere Deduplizierung ist verpflichtend. |
 | Writer stürzt vor Abschlussprüfung ab | Write gilt nicht als bestätigt und muss mit derselben ID wiederholt werden. |
-| Rotator stürzt nach Head-Wechsel ab | Pending-Fenster bleibt im Head sichtbar und kann von einem anderen Rotator versiegelt werden. |
+| Fensteröffner stürzt nach erfolgreichem Head-CAS ab | Der neue Fenster-Header bleibt kanonisch; ein anderer Master schreibt dort weiter und übernimmt später die Versiegelung des Vorgängers. |
 | Objekt fehlt trotz Manifesteintrag | Fenster ist nicht vollständig lesbar; Watermark wird nicht weitergesetzt. |
 | Objekt erscheint nach Versiegelung im alten Präfix | Es besitzt keine bestätigte Zugehörigkeit zu diesem Seal; ein korrekt bestätigter Writer hat eine Kopie in einem späteren Fenster. |
 | Manifest wird doppelt erzeugt | Nur das über Head und Seal-Hash referenzierte Manifest ist kanonisch. |
