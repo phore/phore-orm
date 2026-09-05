@@ -3,6 +3,7 @@
 | Datum | Benutzername | Kurzbeschreibung |
 |---|---|---|
 | 2026-09-05 | dermatthes | §§ 1–12: Proposal angelegt |
+| 2026-09-05 | dermatthes | § 1, § 2.2, § 10, § 12, § 13: Heavy Write Mode mit Zeitfenstern, versiegelten Manifests und asynchroner Synchronisation ergänzt |
 
 **Status:** Offen  
 **Zielprojekt:** Phore ORM  
@@ -16,6 +17,8 @@ Phore ORM soll optional mehrere schreibende Instanzen unterstützen, die jeweils
 Das Konzept ist unter klaren Grenzen machbar. Es ist jedoch keine Multi-Master-Replikation von SQLite-Dateien: Mehrere Instanzen dürfen Schreibvorgänge initiieren, aber ein bedingtes Überschreiben von `head.json` serialisiert alle globalen Commits. Der Object Store ist damit Commit-Log und globaler Compare-and-Swap-Punkt; SQLite bleibt pro Instanz eine lokale, ersetzbare Projektion. Das Modell ist für read-lastige Anwendungen mit geringer bis moderater Schreibrate interessant. Es eignet sich nicht für hohe Write-Raten, Offline-Merges, dauerhaft netzwerkunabhängige Writer oder Anwendungen, die bei einer Object-Store-Störung weiter global konsistent schreiben müssen.
 
 Die in der Ausgangsidee genannte MySQL-Datenbank wird als offensichtlicher Versprecher behandelt: Nach erfolgreicher Veröffentlichung wird die Transaktion in die lokale SQLite-Datenbank eingespielt und deren lokaler Commit-Pointer atomar weitergesetzt.
+
+Für Analyse-, Telemetrie- und Eventdaten ergänzt § 13 einen getrennten Heavy Write Mode. Dieser gibt die globale Reihenfolge und sofortige Konsistenz bewusst auf: Writer legen unveränderliche Batch-Objekte parallel in ein zeitlich begrenztes Fenster, während selten aktualisierte Heads und versiegelte Manifeste den vollständigen, inkrementell lesbaren Bestand abgeschlossener Fenster festhalten.
 
 ## § 2 Zielbild und Grenzen
 
@@ -32,7 +35,7 @@ Die in der Ausgangsidee genannte MySQL-Datenbank wird als offensichtlicher Versp
 
 ### § 2.2 Nicht-Ziele
 
-Nicht Bestandteil des ersten Entwurfs sind konfliktfreie Offline-Änderungen, automatisches Zusammenführen divergenter Branches, schreibbare Replikate ohne Verbindung zum Object Store, Replikation beliebiger SQL-Verbindungen außerhalb von Phore ORM, das Teilen einer SQLite-Datei über ein Netzwerk-Dateisystem, Cross-Cloud-Consensus sowie eine garantierte hohe Schreibrate. Das System entscheidet bei konkurrierenden Änderungen nicht stillschweigend per Last-Write-Wins, sondern verlangt eine explizite Konfliktstrategie.
+Nicht Bestandteil des konsistenten Modus sind konfliktfreie Offline-Änderungen, automatisches Zusammenführen divergenter Branches, schreibbare Replikate ohne Verbindung zum Object Store, Replikation beliebiger SQL-Verbindungen außerhalb von Phore ORM, das Teilen einer SQLite-Datei über ein Netzwerk-Dateisystem, Cross-Cloud-Consensus sowie eine garantierte hohe Schreibrate. Das System entscheidet bei konkurrierenden Änderungen nicht stillschweigend per Last-Write-Wins, sondern verlangt eine explizite Konfliktstrategie. Hohe Schreibraten werden ausschließlich durch den in § 13 beschriebenen, semantisch getrennten Append-Modus unterstützt; dessen verzögerte Sichtbarkeit und schwächere Konsistenz dürfen nicht unbemerkt auf normale CRUD-Tabellen übertragen werden.
 
 ## § 3 Konsistenzmodell und Invarianten
 
@@ -166,14 +169,14 @@ Die lokale Datenbank gilt als Cache mit dauerhaftem Cursor, nicht als alleinige 
 | Head zeigt auf fehlenden Commit | Datenkorruption beziehungsweise verletzte Veröffentlichungsreihenfolge; fail closed. |
 | Lokaler Apply scheitert nach globalem Commit | Lokale DB verwerfen/reparieren; globalen Head nicht zurückbiegen. |
 | Object Store nicht erreichbar | Frische Reads und Writes schlagen fehl; explizit erlaubte lokale Stale Reads bleiben möglich. |
-| Hohe Schreibkonkurrenz | Viele CAS-Konflikte, steigende Kosten und potenzielle Starvation; Architektur ist ungeeignet oder benötigt einen Sequencer. |
+| Hohe Schreibkonkurrenz im konsistenten Modus | Viele CAS-Konflikte, steigende Kosten und potenzielle Starvation; für ungeordnete Append-Daten den Heavy Write Mode aus § 13, sonst einen Sequencer verwenden. |
 | Client lange offline | Snapshot laden und Restkette anwenden; keine Offline-Writes im MVP. |
 | Schema-Version unbekannt | Upgrade verlangen und Apply stoppen. |
 | Objekt versehentlich gelöscht/überschrieben | Versionierung, Retention und Bucket-Policy nutzen; Integritätsprüfung schlägt an. |
 | Head öffentlich gecacht | Verboten; private, nicht zwischengespeicherte API-Zugriffe verwenden. |
 | Lebenszyklusregel löscht aktive Objekte | Bucket-Konfiguration beim Start prüfen oder dokumentiert erzwingen. |
 
-Der Head ist ein globaler Hotspot. Die maximale nachhaltige Write-Rate wird durch Object-Store-Latenz, drei Remote-Schritte — Head lesen, Commit schreiben, Head per CAS ersetzen — und Konfliktretries begrenzt. Das System soll daher keine feste Transaktionsrate versprechen, sondern in einem Spike die Zielregionen, Parallelität, Kosten und p95/p99-Latenzen messen. Benötigt die Anwendung hohe oder vorhersagbare Write-Raten, ist ein echter Datenbankdienst oder ein dedizierter Log-Sequencer die passendere Architektur.
+Der Head ist ein globaler Hotspot. Die maximale nachhaltige Write-Rate wird durch Object-Store-Latenz, drei Remote-Schritte — Head lesen, Commit schreiben, Head per CAS ersetzen — und Konfliktretries begrenzt. Das System soll daher keine feste Transaktionsrate versprechen, sondern in einem Spike die Zielregionen, Parallelität, Kosten und p95/p99-Latenzen messen. Benötigt die Anwendung hohe oder vorhersagbare Write-Raten bei geordneten, konfliktgeprüften CRUD-Transaktionen, ist ein echter Datenbankdienst oder ein dedizierter Log-Sequencer die passendere Architektur. Für ungeordnete, append-only Analyseereignisse kann stattdessen der Heavy Write Mode aus § 13 verwendet werden.
 
 ## § 11 Provider-Abstraktion und Sicherheit
 
@@ -214,6 +217,7 @@ Maßgebliche Primärquellen:
 6. Schema-Migrationen im ersten MVP entweder vollständig sperren oder nur bei exklusivem Maintenance-Modus erlauben.
 7. Konsistenzprofile für Reads explizit in der API sichtbar machen.
 8. Observability für Head-Sequence, lokale Lag-Länge, CAS-Konflikte, Retry-Zahl, Snapshot-Alter, Apply-Fehler und verwaiste Objekte bereitstellen.
+9. Den Heavy Write Mode als zweite, getrennt testbare Ausbaustufe nur für explizit deklarierte Append-Tabellen implementieren.
 
 ### § 12.2 Abnahmekriterien
 
@@ -230,6 +234,112 @@ Der MVP gilt als technisch tragfähig, wenn automatisierte Tests folgende Eigens
 
 ### § 12.3 Offene Entscheidungen
 
-Vor Implementierung sind noch der Referenzprovider, das kanonische Serialisierungsformat, die erlaubten Primärschlüsseltypen, die Standard-Stale-Read-Policy, das Trigger-/Cascade-Modell, der Umgang mit Schema-Migrationen und die Retention alter Commits festzulegen.
+Vor Implementierung sind noch der Referenzprovider, das kanonische Serialisierungsformat, die erlaubten Primärschlüsseltypen, die Standard-Stale-Read-Policy, das Trigger-/Cascade-Modell, der Umgang mit Schema-Migrationen und die Retention alter Commits festzulegen. Für den Heavy Write Mode sind zusätzlich Fensterdauer, Grace Period, maximale Upload-Dauer, Batch-Größe, Manifest-Sharding, zulässige Tabellen und Watermark-Semantik zu entscheiden.
 
 Die Empfehlung lautet, das Vorhaben als experimentellen `CloudSqliteDriver` hinter einer expliziten Feature-Grenze zu beginnen. Das Konzept ist für ein enges, read-lastiges Einsatzprofil feasible. Es scheitert oder wird wirtschaftlich unattraktiv, sobald hohe parallele Write-Raten, Offline-Merges, unkontrollierte Direkt-SQL-Schreibzugriffe, inkompatible Schemas oder Schreibverfügbarkeit während einer Object-Store-Partition gefordert werden.
+
+
+## § 13 Heavy Write Mode
+
+### § 13.1 Zweck und Konsistenzgrenze
+
+Der Heavy Write Mode ist für Analyse-, Telemetrie-, Audit- und Eventdaten vorgesehen, bei denen möglichst viele voneinander unabhängige Inserts aufgenommen werden sollen und eine sofortige globale Reihenfolge nicht erforderlich ist. Jeder Writer lädt unveränderliche Dateien unter einem aktiven Fenster-Präfix hoch. Es gibt keinen Head-CAS pro Datensatz oder Batch und damit keinen einzelnen Write-Hotspot im Datenpfad.
+
+Der Modus garantiert keine sofortige Sichtbarkeit, keine globale Reihenfolge zwischen Writern und keine serialisierbaren Read-modify-write-Operationen. Er garantiert stattdessen nach erfolgreicher Versiegelung eines Fensters einen vollständigen, unveränderlichen Satz aller nach Protokoll bestätigten Batches bis zu einem Watermark. Anwendungen können somit eindeutig sagen: „Alle Ereignisse bis einschließlich Fenster W sind lokal eingespielt“, während das aktive Fenster weiterhin nur best effort sichtbar ist.
+
+Heavy-Write-Tabellen müssen ausdrücklich als appendOnly deklariert und von konsistent replizierten CRUD-Tabellen getrennt werden. Updates und Deletes sind nicht erlaubt, solange ihre Wirkung nicht durch einen kommutativen, idempotenten und reihenfolgeunabhängigen Reducer definiert ist. Für typische Analysedaten ist deshalb ein Eventmodell mit stabiler eventId, konkretem Ereigniszeitpunkt und vollständigem Payload vorzuziehen.
+
+### § 13.2 Objektstruktur
+
+Empfohlene Schlüsselstruktur:
+
+    databases/<database-id>/heavy/head.json
+    databases/<database-id>/heavy/windows/<window-id>/objects/<hash-prefix>/<writer-id>/<batch-id>.ndjson.zst
+    databases/<database-id>/heavy/windows/<window-id>/manifests/<manifest-shard>.json
+    databases/<database-id>/heavy/windows/<window-id>/seal.json
+
+heavy/head.json enthält mindestens die ID und Zeitgrenzen des aktiven Fensters, optional bereits geschlossene, aber noch nicht versiegelte Fenster sowie lastSealedWindowId. Ein seal.json ist unveränderlich und enthält windowId, previousSealedWindowId, Beginn und Ende des Zeitfensters, die Liste beziehungsweise IDs aller Manifest-Shards, Objektanzahl, Gesamtbytes, Schema-Version und einen Hash oder Merkle-Root über die Manifestdaten.
+
+Die eigentlichen Objektnamen werden nicht sequenziell vergeben. Ein zufälliger oder gehashter Präfix verteilt Schreiblast über Storage-Partitionen. batchId und die enthaltenen eventId-Werte sind global eindeutig und bei Retries stabil. Pro Ereignis eine einzelne Kleinstdatei anzulegen ist zwar möglich, erzeugt bei Millionen Ereignissen aber hohe Request-, Listing- und Speicherkosten. Empfohlen werden Writer-seitige Micro-Batches, beispielsweise komprimiertes NDJSON oder für analytische Verarbeitung Parquet, mit konfigurierbaren Grenzen für Ereigniszahl, Bytes und maximale Pufferzeit.
+
+### § 13.3 Schreiben in das aktive Fenster
+
+Ein Writer arbeitet ohne globalen Lock:
+
+1. Er liest oder cached heavy/head.json und bestimmt das aktive Fenster W.
+2. Er serialisiert einen Batch kanonisch, vergibt eine stabile batchId und lädt ihn unter dem Präfix von W mit einer Create-only-Vorbedingung hoch.
+3. Nach erfolgreichem Upload liest er den Head erneut.
+4. Ist W weiterhin aktiv, ist der Batch für dieses Fenster bestätigt.
+5. Wurde W zwischenzeitlich geschlossen, lädt der Writer denselben logischen Batch zusätzlich unter dem neuen aktiven Fenster hoch. Stabile eventId- und batchId-Werte machen diese Überlappung beim Apply idempotent.
+6. Erst nach dieser Abschlussprüfung meldet der Writer der Anwendung Erfolg.
+
+Ein unbekannter Upload-Ausgang wird durch Wiederholung unter demselben Objektschlüssel mit Create-only-Semantik oder durch Existenz- und Hashprüfung geklärt. Ein Client, der nach dem ersten Upload abstürzt, bevor er die Abschlussprüfung beendet, hat keinen bestätigten Write; der aufrufende Prozess muss denselben Batch idempotent wiederholen können.
+
+Der Head darf für die typische Fensterdauer, beispielsweise zehn Minuten, unverändert bleiben. Dadurch greifen die Limits für wiederholte Änderungen desselben Objektnamens nicht in den normalen Write-Pfad ein. Die erreichbare Schreibrate wird primär durch die Bucket-Rate, Objektverteilung, Netzwerkbandbreite und gewählte Batch-Größe begrenzt.
+
+### § 13.4 Fensterwechsel und Versiegelung
+
+Der Wechsel von W auf W+1 erfolgt zweiphasig:
+
+1. Ein Rotator ersetzt heavy/head.json per CAS und markiert W+1 als aktiv sowie W als geschlossen beziehungsweise pending. Ab diesem Zeitpunkt beginnen protokollkonforme Writer keine neuen Uploads mehr nach W.
+2. Der Rotator oder Compactor wartet eine konfigurierbare Grace Period, die maximale Upload-Dauer, Retry-Zeit und tolerierte Clock-Abweichung abdeckt.
+3. Anschließend listet er ausschließlich das Präfix von W vollständig und stark konsistent, prüft die Objektmetadaten und erzeugt ein oder mehrere unveränderliche Manifest-Shards.
+4. Er schreibt seal.json mit Prüfsummen, Zählern und previousSealedWindowId.
+5. Abschließend aktualisiert er heavy/head.json per CAS auf lastSealedWindowId=W und entfernt W aus der Pending-Liste.
+
+Der CAS wird damit nur beim Fensterwechsel und bei der Veröffentlichung des Siegels benötigt, nicht pro Datenbatch. Mehrere Rotatoren sind zulässig, sofern nur erfolgreiche CAS-Übergänge maßgeblich werden. Ein Rotator darf höchstens ein begrenztes Backlog unversiegelter Fenster zulassen; bei Ausfall kann ein anderer Rotator anhand des Heads fortsetzen.
+
+Die zweiphasige Schließung ist erforderlich. Würde der Compactor ein noch beschreibbares Präfix listen und sofort versiegeln, könnte ein gleichzeitig abgeschlossener Upload im Manifest fehlen. Ein Writer, der einen alten Head verwendet, erkennt nach seinem Upload die Rotation und repliziert den Batch in das neue Fenster; durch die Grace Period und Idempotenz entsteht dadurch höchstens ein Duplikat, kein bestätigter Datenverlust.
+
+### § 13.5 Index und Manifest-Sharding
+
+Das Manifest ist der Index eines abgeschlossenen Fensters. Ein Replikat muss deshalb nicht alle historischen Bucket-Objekte auflisten oder Millionen Dateien anhand lokaler IDs vergleichen. Es liest den letzten versiegelten Head, folgt über previousSealedWindowId rückwärts bis zum eigenen lokalen Watermark und lädt nur die Manifest-Shards und Datenobjekte der fehlenden Fenster.
+
+Große Fenster verwenden mehrere Manifest-Shards mit begrenzter Eintrags- und Bytegröße. Jeder Eintrag enthält mindestens Objektschlüssel, Batch-ID, Dateigröße, Inhalts-Hash, Encoder-Version, Schema-Version, Ereignisanzahl sowie optional minimale und maximale Ereigniszeit. seal.json legt Reihenfolge und Hash aller Shards fest, obwohl die Reihenfolge der enthaltenen Ereignisse fachlich keine Bedeutung hat.
+
+Das Manifest ist kein Suchindex für einzelne fachliche Datensätze. Analytische Filter laufen nach der Materialisierung in SQLite oder einem späteren Analyseformat. Optionale Statistiken wie Zeitbereich, Partition-Key oder Bloom-Filter dürfen nur die Auswahl zu ladender Batches optimieren und niemals die Vollständigkeitsprüfung ersetzen.
+
+### § 13.6 Synchronisation und Read-Semantik
+
+Eine lokale Instanz speichert last_sealed_window_id und alle angewendeten batchId- beziehungsweise eventId-Werte oder eine äquivalente Idempotenzstruktur. Bei der Synchronisation lädt sie die Kette fehlender Seals, kehrt diese um und verarbeitet die Fenster chronologisch. Innerhalb eines Fensters dürfen Manifest-Shards und Batches parallel geladen und in beliebiger Reihenfolge angewendet werden.
+
+Jeder Batch wird geprüft und in einer lokalen SQLite-Transaktion eingespielt. Append-Tabellen verwenden eventId als Unique Key und idempotente Inserts, beispielsweise INSERT ... ON CONFLICT DO NOTHING. Erst wenn sämtliche Manifest-Shards und Objekte eines Fensters erfolgreich verarbeitet sind, wird der lokale Watermark atomar auf dieses Fenster gesetzt.
+
+Die API unterscheidet mindestens:
+
+- sealed: vollständig und reproduzierbar bis lastSealedWindowId;
+- maxAge(Duration): wartet beziehungsweise synchronisiert bis zu einem ausreichend neuen Seal;
+- includeActive: listet zusätzlich das aktive Fenster best effort, ohne Vollständigkeitsgarantie.
+
+Bei zehn Minuten Fensterdauer liegt die garantierte Sichtbarkeit typischerweise um Fensterdauer plus Grace Period, Sealing- und Sync-Zeit hinter dem aktuellen Zeitpunkt. Kürzere Fenster reduzieren den Lag, erhöhen aber Head-, Listing- und Manifestkosten. Ein S3-Event beziehungsweise eine Cloud-Storage-Pub/Sub-Benachrichtigung auf seal.json kann Replikate sofort wecken; die Benachrichtigung bleibt ein Hinweis, während Head, Seal und Manifest die Wahrheit bilden.
+
+### § 13.7 Fehlerfälle
+
+| Fehlerfall | Verhalten |
+|---|---|
+| Mehrere Writer laden parallel | Unabhängige Schlüssel vermeiden Konflikte; Uploads skalieren mit dem Bucket. |
+| Derselbe Batch wird wiederholt | Stabiler Schlüssel und Hash beziehungsweise idempotente eventId verhindern doppelte Wirkung. |
+| Writer lädt nach altem Head hoch | Post-Upload-Head-Prüfung kopiert den Batch in das neue Fenster; spätere Deduplizierung ist verpflichtend. |
+| Writer stürzt vor Abschlussprüfung ab | Write gilt nicht als bestätigt und muss mit derselben ID wiederholt werden. |
+| Rotator stürzt nach Head-Wechsel ab | Pending-Fenster bleibt im Head sichtbar und kann von einem anderen Rotator versiegelt werden. |
+| Objekt fehlt trotz Manifesteintrag | Fenster ist nicht vollständig lesbar; Watermark wird nicht weitergesetzt. |
+| Objekt erscheint nach Versiegelung im alten Präfix | Es besitzt keine bestätigte Zugehörigkeit zu diesem Seal; ein korrekt bestätigter Writer hat eine Kopie in einem späteren Fenster. |
+| Manifest wird doppelt erzeugt | Nur das über Head und Seal-Hash referenzierte Manifest ist kanonisch. |
+| Benachrichtigung fehlt oder kommt doppelt | Periodischer Head-Abgleich und idempotenter Sync stellen Fortschritt sicher. |
+| Ungeordnetes Ereignis verändert bestehenden Zustand | Operation wird abgelehnt oder benötigt einen ausdrücklich definierten kommutativen Reducer. |
+
+### § 13.8 Skalierung und Grenzen
+
+Durch einzigartige Objektschlüssel entfällt die Ein-Write-pro-Sekunde-Grenze von Google Cloud Storage für denselben Objektnamen im eigentlichen Datenpfad. Google Cloud Storage nennt für neue Buckets anfänglich ungefähr 1.000 Objekt-Writes pro Sekunde und skaliert bei verteilter Last weiter; Amazon S3 nennt mindestens 3.500 schreibende Requests pro Sekunde und Prefix. Beide Werte sind Bucket- beziehungsweise Prefix-Eigenschaften und müssen mit realer Batch-Größe, Region und Clientparallelität getestet werden.
+
+Der verbleibende Engpass ist die Versiegelung: Sehr viele Kleinstobjekte verlängern Listing, Manifest-Erstellung, Download und SQLite-Apply. Micro-Batching ist deshalb Bestandteil des Protokolls, nicht nur eine optionale Optimierung. Für Millionen Ereignisse pro Fenster können hierarchische Manifeste, mehrere Partitionen pro fachlichem Datenstrom und ein separater Compactor erforderlich werden.
+
+Der Heavy Write Mode ist kein Ersatz für Kafka, Pub/Sub, Kinesis oder eine analytische Datenbank, wenn niedrige Event-Latenz, dauerhaft geordnete Partitionen, Consumer-Gruppen, Backpressure oder komplexe Stream-Verarbeitung benötigt werden. Er ist ein bewusst einfaches Object-Store-Protokoll für hohe Append-Raten, verzögerte Vollständigkeit und kostengünstige lokale Materialisierung.
+
+Maßgebliche Primärquellen:
+
+- [Amazon S3: Performance Design Patterns](https://docs.aws.amazon.com/AmazonS3/latest/userguide/optimizing-performance.html)
+- [Google Cloud Storage: Request Rate and Access Distribution](https://cloud.google.com/storage/docs/request-rate)
+- [Google Cloud Storage: Quotas and Limits](https://cloud.google.com/storage/quotas)
+- [Amazon S3: Event Notifications](https://docs.aws.amazon.com/AmazonS3/latest/userguide/EventNotifications.html)
+- [Google Cloud Storage: Pub/Sub Notifications](https://cloud.google.com/storage/docs/pubsub-notifications)
