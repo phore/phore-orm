@@ -4,6 +4,7 @@
 |---|---|---|
 | 2026-09-05 | dermatthes | §§ 1–12: Proposal angelegt |
 | 2026-09-05 | dermatthes | § 1, § 2.2, § 10, § 12, § 13: Heavy Write Mode mit Zeitfenstern, versiegelten Manifests und asynchroner Synchronisation ergänzt |
+| 2026-09-05 | dermatthes | § 13.2–§ 13.4: Fensteröffnung durch konkurrierende Master und CAS-Konfliktauflösung präzisiert |
 
 **Status:** Offen  
 **Zielprojekt:** Phore ORM  
@@ -254,42 +255,50 @@ Heavy-Write-Tabellen müssen ausdrücklich als appendOnly deklariert und von kon
 Empfohlene Schlüsselstruktur:
 
     databases/<database-id>/heavy/head.json
+    databases/<database-id>/heavy/windows/<window-id>/header.json
     databases/<database-id>/heavy/windows/<window-id>/objects/<hash-prefix>/<writer-id>/<batch-id>.ndjson.zst
     databases/<database-id>/heavy/windows/<window-id>/manifests/<manifest-shard>.json
     databases/<database-id>/heavy/windows/<window-id>/seal.json
 
-heavy/head.json enthält mindestens die ID und Zeitgrenzen des aktiven Fensters, optional bereits geschlossene, aber noch nicht versiegelte Fenster sowie lastSealedWindowId. Ein seal.json ist unveränderlich und enthält windowId, previousSealedWindowId, Beginn und Ende des Zeitfensters, die Liste beziehungsweise IDs aller Manifest-Shards, Objektanzahl, Gesamtbytes, Schema-Version und einen Hash oder Merkle-Root über die Manifestdaten.
+heavy/head.json ist nur der per CAS ersetzte Zeiger auf den aktuellen, unveränderlichen Fenster-Header. Jeder windows/<window-id>/header.json enthält Fenster-ID, Beginn, Schreibfrist und previousWindowId und bildet damit die rückwärts durchlaufbare Head-Kette. Ein beim CAS unterlegener, noch nicht referenzierter Fenster-Header ist verwaist und hat keine fachliche Wirkung. Ein seal.json ist unveränderlich und enthält windowId, previousSealedWindowId, Beginn und Ende des Zeitfensters, die Liste beziehungsweise IDs aller Manifest-Shards, Objektanzahl, Gesamtbytes, Schema-Version und einen Hash oder Merkle-Root über die Manifestdaten.
 
 Die eigentlichen Objektnamen werden nicht sequenziell vergeben. Ein zufälliger oder gehashter Präfix verteilt Schreiblast über Storage-Partitionen. batchId und die enthaltenen eventId-Werte sind global eindeutig und bei Retries stabil. Pro Ereignis eine einzelne Kleinstdatei anzulegen ist zwar möglich, erzeugt bei Millionen Ereignissen aber hohe Request-, Listing- und Speicherkosten. Empfohlen werden Writer-seitige Micro-Batches, beispielsweise komprimiertes NDJSON oder für analytische Verarbeitung Parquet, mit konfigurierbaren Grenzen für Ereigniszahl, Bytes und maximale Pufferzeit.
 
 ### § 13.3 Schreiben in das aktive Fenster
 
-Ein Writer arbeitet ohne globalen Lock:
+Jeder Master kann zugleich normaler Writer und Fensteröffner sein. Er liest oder cached heavy/head.json und den referenzierten Fenster-Header. Solange dessen Schreibfrist nicht abgelaufen ist, lädt er seinen Batch ohne globalen Lock unter einem eindeutigen Schlüssel in dieses Fenster.
 
-1. Er liest oder cached heavy/head.json und bestimmt das aktive Fenster W.
-2. Er serialisiert einen Batch kanonisch, vergibt eine stabile batchId und lädt ihn unter dem Präfix von W mit einer Create-only-Vorbedingung hoch.
-3. Nach erfolgreichem Upload liest er den Head erneut.
-4. Ist W weiterhin aktiv, ist der Batch für dieses Fenster bestätigt.
-5. Wurde W zwischenzeitlich geschlossen, lädt der Writer denselben logischen Batch zusätzlich unter dem neuen aktiven Fenster hoch. Stabile eventId- und batchId-Werte machen diese Überlappung beim Apply idempotent.
-6. Erst nach dieser Abschlussprüfung meldet der Writer der Anwendung Erfolg.
+Ist die Schreibfrist abgelaufen, legt der Master zunächst einen neuen unveränderlichen Fenster-Header an, dessen previousWindowId auf das bisherige Fenster zeigt, und versucht heavy/head.json mit dem zuvor gelesenen Generation-/ETag-Token per CAS auf diesen Header umzusetzen. Genau ein konkurrierender Master gewinnt. Jeder Verlierer erkennt am CAS-Konflikt, dass bereits ein anderer Master ein neues Fenster geöffnet hat, lädt den aktuellen Head und schreibt seinen Batch in das dort referenzierte Gewinnerfenster. Der nicht referenzierte Header des Verlierers bleibt wirkungslos und kann später als verwaistes Objekt entfernt werden.
 
-Ein unbekannter Upload-Ausgang wird durch Wiederholung unter demselben Objektschlüssel mit Create-only-Semantik oder durch Existenz- und Hashprüfung geklärt. Ein Client, der nach dem ersten Upload abstürzt, bevor er die Abschlussprüfung beendet, hat keinen bestätigten Write; der aufrufende Prozess muss denselben Batch idempotent wiederholen können.
+Der normale Ablauf lautet:
 
-Der Head darf für die typische Fensterdauer, beispielsweise zehn Minuten, unverändert bleiben. Dadurch greifen die Limits für wiederholte Änderungen desselben Objektnamens nicht in den normalen Write-Pfad ein. Die erreichbare Schreibrate wird primär durch die Bucket-Rate, Objektverteilung, Netzwerkbandbreite und gewählte Batch-Größe begrenzt.
+1. Aktuellen Head und Fenster-Header laden.
+2. Bei abgelaufener Schreibfrist ein Nachfolgefenster per CAS öffnen; bei Konflikt den Gewinner-Head laden.
+3. Batch kanonisch serialisieren, eine stabile batchId vergeben und mit Create-only-Vorbedingung unter dem aktiven Fenster-Präfix hochladen.
+4. Nach erfolgreichem Upload den Head nochmals lesen.
+5. Ist weiterhin dasselbe Fenster aktiv, ist der Batch für dieses Fenster bestätigt.
+6. Hat während des bereits laufenden Uploads ein anderer Master das Fenster gewechselt, denselben logischen Batch zusätzlich in das neue aktive Fenster schreiben. Stabile eventId- und batchId-Werte machen die Überlappung beim Apply idempotent.
+7. Erst danach der Anwendung Erfolg melden.
+
+Der CAS-Konflikt löst konkurrierende Fensteröffnungen vollständig auf. Die Nachprüfung nach dem Batch-Upload behandelt ausschließlich den anderen Race: Ein Writer kann das alte Fenster noch vor dessen Ablauf gelesen haben, während sein Upload erst nach der erfolgreichen Head-Umsetzung endet. Ein unbekannter Upload-Ausgang wird unter demselben Objektschlüssel per Create-only-Retry oder Existenz- und Hashprüfung geklärt.
+
+Der Head wird typischerweise nur beim Fensterwechsel, beispielsweise alle zehn Minuten, umgesetzt. Dadurch greifen Limits für wiederholte Änderungen desselben Objektnamens nicht in den normalen Batch-Pfad ein. Die erreichbare Schreibrate wird primär durch Bucket-Rate, Objektverteilung, Netzwerkbandbreite und Batch-Größe begrenzt.
 
 ### § 13.4 Fensterwechsel und Versiegelung
 
-Der Wechsel von W auf W+1 erfolgt zweiphasig:
+Der Wechsel von W auf W+1 wird von dem ersten Master durchgeführt, der nach Ablauf der Schreibfrist einen Write beginnt:
 
-1. Ein Rotator ersetzt heavy/head.json per CAS und markiert W+1 als aktiv sowie W als geschlossen beziehungsweise pending. Ab diesem Zeitpunkt beginnen protokollkonforme Writer keine neuen Uploads mehr nach W.
-2. Der Rotator oder Compactor wartet eine konfigurierbare Grace Period, die maximale Upload-Dauer, Retry-Zeit und tolerierte Clock-Abweichung abdeckt.
-3. Anschließend listet er ausschließlich das Präfix von W vollständig und stark konsistent, prüft die Objektmetadaten und erzeugt ein oder mehrere unveränderliche Manifest-Shards.
-4. Er schreibt seal.json mit Prüfsummen, Zählern und previousSealedWindowId.
-5. Abschließend aktualisiert er heavy/head.json per CAS auf lastSealedWindowId=W und entfernt W aus der Pending-Liste.
+1. Der Master schreibt einen unveränderlichen Header für W+1 mit previousWindowId=W.
+2. Er versucht heavy/head.json per CAS von W auf W+1 umzusetzen.
+3. Bei Erfolg ist W geschlossen und W+1 das einzige kanonische aktive Fenster.
+4. Bei einem CAS-Konflikt verwirft der Master seinen Kandidaten logisch, lädt den bereits von einem anderen Master gesetzten Head und schreibt nach dessen Fenster.
+5. Nach einer konfigurierbaren Grace Period listet ein beliebiger Master oder Compactor ausschließlich das Präfix von W vollständig und stark konsistent.
+6. Er erzeugt ein oder mehrere unveränderliche Manifest-Shards und veröffentlicht seal.json mit Prüfsummen, Zählern und previousSealedWindowId.
+7. Der aktuelle Head beziehungsweise eine separate, selten aktualisierte Seal-Referenz wird per CAS auf lastSealedWindowId=W fortgeschrieben.
 
-Der CAS wird damit nur beim Fensterwechsel und bei der Veröffentlichung des Siegels benötigt, nicht pro Datenbatch. Mehrere Rotatoren sind zulässig, sofern nur erfolgreiche CAS-Übergänge maßgeblich werden. Ein Rotator darf höchstens ein begrenztes Backlog unversiegelter Fenster zulassen; bei Ausfall kann ein anderer Rotator anhand des Heads fortsetzen.
+Es gibt keinen fest zugewiesenen Rotator und keine konkurrierenden kanonischen Nachfolgefenster: Der Head-CAS entscheidet die Fensteröffnung. Fällt der Gewinner nach dem CAS aus, bleibt das neue Fenster dennoch aus seinem Header rekonstruierbar; jeder andere Master kann normal hineinschreiben und die Versiegelung des Vorgängers übernehmen.
 
-Die zweiphasige Schließung ist erforderlich. Würde der Compactor ein noch beschreibbares Präfix listen und sofort versiegeln, könnte ein gleichzeitig abgeschlossener Upload im Manifest fehlen. Ein Writer, der einen alten Head verwendet, erkennt nach seinem Upload die Rotation und repliziert den Batch in das neue Fenster; durch die Grace Period und Idempotenz entsteht dadurch höchstens ein Duplikat, kein bestätigter Datenverlust.
+Die Grace Period schützt vor Uploads, die bereits unter W begonnen wurden, als W noch aktuell war. Ein Writer, dessen Upload die Head-Umsetzung überlappt, erkennt das bei seiner Abschlussprüfung und schreibt denselben Batch idempotent nach W+1. Erst danach gilt sein Write als bestätigt. So bleibt der einfache CAS-Fensterwechsel erhalten, ohne dass ein während der Manifest-Erstellung verspätet fertiggestellter Upload unbemerkt verloren geht.
 
 ### § 13.5 Index und Manifest-Sharding
 
